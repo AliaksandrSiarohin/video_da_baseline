@@ -32,7 +32,7 @@ class DIAL(nn.Module):
         self.beta = nn.Parameter(torch.Tensor(1, num_features))
         self.reset_parameters()
 
-    def forward(self, x, is_source=True):
+    def forward(self, x, is_source):
         if is_source:
             x = self.bn_S(x)
         else:
@@ -50,7 +50,7 @@ class BaselineModel(nn.Module):
 
         self.conv1 = nn.Conv1d(2048, 4096, 1)
         self.conv2 = nn.Conv1d(4096, 8192, 1)
-        self.pool1 = nn.AvgPool1d(5)
+
         self.fc = nn.Linear(8192, num_classes)
         self.bn1 = DIAL1d(4096)
         self.bn2 = DIAL1d(8192)
@@ -60,18 +60,15 @@ class BaselineModel(nn.Module):
         else:
             self.bn3 = None
 
-    def forward(self, input, is_source=True):
+    def forward(self, input, is_source):
         out = input.permute(0, 2, 1)
 
         out = torch.relu(self.bn1(self.conv1(out), is_source))
         out = torch.relu(self.bn2(self.conv2(out), is_source))
-        out = self.pool1(out)
-
-        out = out.view((out.shape[0], -1))
-
+        out = out.view(out.shape[0], out.shape[1], -1).mean(-1)
         out = self.fc(out)
 
         if self.bn3 is not None:
-            out = self.bn3(out, True)
+            out = self.bn3(out, is_source)
 
         return out

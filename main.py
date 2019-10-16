@@ -1,34 +1,40 @@
 from argparse import ArgumentParser
 
 import numpy as np
-from torch.utils.data import DataLoader
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, RandomSampler
 
-from datasets import VideoFeaturesDataset
-from loss import *
+from datasets import VideoFeaturesDataset, SeqRandomSampler
+from loss import entropy
 from models import BaselineModel
 
 
 def main(args):
     source_dataset = VideoFeaturesDataset(args.features_folder_source, list_file=args.list_file_source,
                                           num_frames=args.num_frames, sampling_strategy='TSNTrain')
-
-    source_dataset = DataLoader(source_dataset, args.bs, shuffle=True, drop_last=True)
+    num_classes = source_dataset.num_classes
 
     target_dataset = VideoFeaturesDataset(args.features_folder_target, list_file=args.list_file_target,
                                           num_frames=args.num_frames, sampling_strategy='TSNTrain')
 
-    target_dataset = DataLoader(target_dataset, args.bs, shuffle=True, drop_last=True)
+    num_samples = max(len(source_dataset), len(target_dataset))
 
-    assert len(source_dataset) == len(target_dataset)  # Increase min dataset size
+    source_dataset = DataLoader(source_dataset, args.bs, shuffle=False, num_workers=args.num_workers, drop_last=True,
+                                sampler=SeqRandomSampler(source_dataset, num_samples=num_samples))
+    target_dataset = DataLoader(target_dataset, args.bs, shuffle=False, num_workers=args.num_workers, drop_last=True,
+                                sampler=SeqRandomSampler(target_dataset, num_samples=num_samples))
 
     val_target_dataset = VideoFeaturesDataset(args.features_folder_target, list_file=args.list_file_val,
-                                              num_frames=args.num_frames, sampling_strategy='TSNVal',
-                                              min_dataset_size=0)
+                                              num_frames=args.num_frames, sampling_strategy='TSNVal')
 
     val_target_dataset = DataLoader(val_target_dataset, args.bs, shuffle=False, drop_last=False)
 
-    model = BaselineModel(dial_last=args.dial_last, num_classes=source_dataset.num_classes)
+    model = BaselineModel(dial_last=args.dial_last, num_classes=num_classes)
     optimizer = torch.optim.SGD(model.parameters(), args.lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
+    #schedule = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[10, 20])
+
+    model = model.cuda()
 
     for epoch in range(args.num_epochs):
         print('Starting epoch %d / %d ' % (epoch + 1, args.num_epochs))
@@ -39,7 +45,9 @@ def main(args):
         target_acc = check_accuracy(model, target_dataset)
         val_acc = check_accuracy(model, val_target_dataset)
 
-        print('Source acc: %f , Train acc: %f, Train Val acc: %f' % (source_acc, target_acc, val_acc))
+        #schedule.step(epoch)
+
+        print('Source acc: %f , Target acc: %f, Train Val acc: %f' % (source_acc, target_acc, val_acc))
 
 
 def run_epoch(model, source_dataset, target_dataset, optimizer, args):
@@ -53,16 +61,16 @@ def run_epoch(model, source_dataset, target_dataset, optimizer, args):
         x_target = target['frames'].cuda()
 
         # Run a forward pass and compute the score and loss
-        score_source = model(x_source)
-        score_target = model(x_target)
+        score_source = model(x_source, True)
+        score_target = model(x_target, False)
 
         loss_source = criterion(score_source, y_source)
         loss_target = args.entropy_target_weight * entropy(score_target)
         loss = (loss_source + loss_target)
 
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        optimizer.zero_grad()
 
 
 def check_accuracy(model, loader):
@@ -71,10 +79,10 @@ def check_accuracy(model, loader):
 
     with torch.no_grad():
         for x in loader:
-            x = x['frames'].cuda()
             y = x['labels'].cuda().long()
+            x = x['frames'].cuda()
 
-            scores = model(x)
+            scores = model(x, False)
 
             _, preds = torch.max(scores, 1)
             num_correct += torch.sum(preds == y.data)
@@ -85,29 +93,42 @@ def check_accuracy(model, loader):
     return acc
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     parser = ArgumentParser()
 
-    parser.add_argument('--list_file_source', type=str, default="data/hmdb51/list_hmdb51_train_hmdb_ucf-feature.txt")
-    parser.add_argument('--list_file_target', type=str, default="data/ucf101/list_ucf101_train_hmdb_ucf-feature.txt")
+    parser.add_argument('--source', type=str, default='ucf101')
+    parser.add_argument('--target', type=str, default='olympic')
 
-    parser.add_argument('--list_file_val', type=str, default="data/ucf101/list_ucf101_val_hmdb_ucf-feature.txt")
+    parser.add_argument('--list_file_source', type=str,
+                        default="data/{source}/list_{source}_train_{target}-feature.txt")
+    parser.add_argument('--list_file_target', type=str,
+                        default="data/{target}/list_{target}_train_{source}-feature.txt")
 
-    parser.add_argument('--features_folder_source', default='/media/gin/data/dataset/hmdb51')
-    parser.add_argument('--features_folder_target', default='/media/gin/data/dataset/ucf101')
+    parser.add_argument('--list_file_val', type=str, default="data/{target}/list_{target}_val_{source}-feature.txt")
+
+    parser.add_argument('--features_folder_source', default='/media/gin/data/dataset/{source}/RGB-feature')
+    parser.add_argument('--features_folder_target', default='/media/gin/data/dataset/{target}/RGB-feature')
     parser.add_argument('--num_frames', type=int, default=5)
 
-    parser.add_argument('--entropy_target_weight', type=float, default=3)
+    parser.add_argument('--entropy_target_weight', type=float, default=0.3)
+    parser.add_argument('--dial_last', action='store_true', default=False)
 
     parser.add_argument('--lr', type=float, default=3e-2)
     parser.add_argument('--bs', type=int, default=128)
     parser.add_argument('--num_epochs', type=int, default=30)
 
-    parser.add_argument('--dial_last', action='store_true', default=False)
-
-    parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--seed', type=int, default=0)
 
     args = parser.parse_args()
+
+    args.list_file_source = args.list_file_source.format(**vars(args))
+    args.list_file_target = args.list_file_target.format(**vars(args))
+    args.list_file_val = args.list_file_val.format(**vars(args))
+    args.features_folder_source = args.features_folder_source.format(**vars(args))
+    args.features_folder_target = args.features_folder_target.format(**vars(args))
+
+    print(args)
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)

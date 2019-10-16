@@ -25,7 +25,7 @@ class VideoRecord(object):
 
 
 class VideoFeaturesDataset(data.Dataset):
-    def __init__(self, features_folder, list_file, num_frames, sampling_strategy, min_dataset_size=1024):
+    def __init__(self, features_folder, list_file, num_frames, sampling_strategy):
         assert sampling_strategy in ['TSNTrain', 'TSNVal', 'ALL']
 
         self.features_folder = features_folder
@@ -38,9 +38,6 @@ class VideoFeaturesDataset(data.Dataset):
         self.video_list = [VideoRecord(x.strip().split(' ')) for x in open(self.list_file)]
         self.num_classes = len(set([record.label for record in self.video_list]))
 
-        # Repeat dataset if less than min_size
-        self.dataset_size = min(len(self.video_list), min_dataset_size)
-
     def tsn_sample(self, record, is_val=False):
         segment_duration = record.video_len // self.num_frames
 
@@ -50,10 +47,9 @@ class VideoFeaturesDataset(data.Dataset):
             frame_idx = np.multiply(list(range(self.num_frames)), segment_duration)
             frame_idx += randint(segment_duration, size=self.num_frames)
 
-        return frame_idx
+        return frame_idx + 1
 
     def __getitem__(self, idx):
-        idx %= len(self.video_list)
         record = self.video_list[idx]
 
         if self.sampling_strategy == 'TSNTrain':
@@ -79,4 +75,21 @@ class VideoFeaturesDataset(data.Dataset):
         return {'frames': frames, 'labels': record.label, 'idx': frame_idx}
 
     def __len__(self):
-        return len(self.dataset_size)
+        return len(self.video_list)
+
+
+class SeqRandomSampler(torch.utils.data.Sampler):
+
+    def __init__(self, data_source, num_samples):
+        self.data_source = data_source
+        self.num_samples = num_samples
+        self.num_repeats = num_samples // len(self.data_source)
+
+    def __iter__(self):
+        n = len(self.data_source)
+        idx = list(range(n)) * self.num_repeats
+        np.random.shuffle(idx)
+        return iter(idx[:self.num_samples])
+
+    def __len__(self):
+        return self.num_samples

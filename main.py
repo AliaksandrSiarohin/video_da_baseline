@@ -33,7 +33,8 @@ def main(args):
 
     model = BaselineModel(dial=args.dial, bn_last=args.bn_last, num_classes=num_classes)
     optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=1e-4)#, momentum=0.9, nesterov=True)
-    schedule = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 60])
+    schedule = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer,
+                                                    milestones=[args.num_epochs // 3, 2 * args.num_epochs // 3])
 
     model = model.cuda()
 
@@ -140,7 +141,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--num_repeats', type=int, default=5)
+    parser.add_argument('--num_repeats', type=int, default=2)
 
     args = parser.parse_args()
 
@@ -162,4 +163,4 @@ if __name__ == "__main__":
         acc = main(args)
         acc_list.append(acc)
 
-    print("Mean over runs {}, std over runs {}".format(np.mean(acc_list), np.std(acc_list)))
+    print("Mean over runs {:.4f}+/-{:.4f}".format(np.mean(acc_list), np.std(acc_list)))

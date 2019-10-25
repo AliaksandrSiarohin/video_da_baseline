@@ -39,13 +39,13 @@ class VideoFeaturesDataset(data.Dataset):
         self.num_classes = len(set([record.label for record in self.video_list]))
 
     def tsn_sample(self, record, is_val=False):
-        segment_duration = record.video_len // self.num_frames
+        segment_duration = record.video_len / self.num_frames
 
         if is_val:
             frame_idx = np.multiply(list(range(self.num_frames)), segment_duration) + 0.5 * segment_duration
         else:
             frame_idx = np.multiply(list(range(self.num_frames)), segment_duration)
-            frame_idx += randint(segment_duration, size=self.num_frames)
+            frame_idx += randint(1 if segment_duration < 1 else int(segment_duration), size=self.num_frames)
 
         return frame_idx + 1
 

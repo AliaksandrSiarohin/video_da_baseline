@@ -34,7 +34,7 @@ def main(args):
     model = BaselineModel(dial=args.dial, bn_last=args.bn_last, num_classes=num_classes)
     optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=1e-4)#, momentum=0.9, nesterov=True)
     schedule = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer,
-                                                    milestones=[args.num_epochs // 3, 2 * args.num_epochs // 3])
+                                                    milestones=[args.num_epochs // 2])
 
     model = model.cuda()
 
@@ -125,23 +125,25 @@ if __name__ == "__main__":
 
     parser.add_argument('--list_file_val', type=str, default="data/{target}/list_{target}_val_{source}-feature.txt")
 
-    parser.add_argument('--features_folder_source', default='/media/gin/data/dataset/{source}/RGB-feature')
-    parser.add_argument('--features_folder_target', default='/media/gin/data/dataset/{target}/RGB-feature')
+    parser.add_argument('--features_folder_source', default='../dataset/{source}/RGB-feature')
+    parser.add_argument('--features_folder_target', default='../dataset/{target}/RGB-feature')
     parser.add_argument('--num_frames', type=int, default=10)
 
     parser.add_argument('--cross_entropy_source_weight', type=float, default=1)
     parser.add_argument('--entropy_target_weight', type=float, default=0.3)
+    #parser.add_argument('--frame_number_task_weight', type=float, default=1)
+
 
     parser.add_argument('--bn_last', action='store_true', default=False)
     parser.add_argument('--dial', action='store_true', default=False)
 
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--bs', type=int, default=128)
-    parser.add_argument('--num_epochs', type=int, default=90)
+    parser.add_argument('--num_epochs', type=int, default=60)
 
     parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--num_repeats', type=int, default=2)
+    parser.add_argument('--num_repeats', type=int, default=5)
 
     args = parser.parse_args()
 

@@ -45,7 +45,7 @@ class DIAL(nn.Module):
 
 
 class BaselineModel(nn.Module):
-    def __init__(self, bn_last=False, dial=False, num_classes=5):
+    def __init__(self, bn_last=False, dial=False, num_classes=5, num_kp=5):
         super(BaselineModel, self).__init__()
 
         self.conv1 = nn.Conv1d(2048, 512, 3)
@@ -60,6 +60,11 @@ class BaselineModel(nn.Module):
         else:
             self.bn3 = None
 
+        if num_kp != 0:
+            self.kp = nn.Conv1d(128, num_kp, 1)
+        else:
+            self.kp = None
+
         self.dial = dial
 
     def forward(self, input, is_source):
@@ -68,11 +73,16 @@ class BaselineModel(nn.Module):
         out = input.permute(0, 2, 1)
 
         out = torch.relu(self.bn1(self.conv1(out), is_source))
-        out = torch.relu(self.bn2(self.conv2(out), is_source))
-        out = out.view(out.shape[0], out.shape[1], -1).mean(-1)
+        feat = torch.relu(self.bn2(self.conv2(out), is_source))
+        out = out.view(feat.shape[0], feat.shape[1], -1).mean(-1)
         out = self.fc(out)
 
         if self.bn3 is not None:
             out = self.bn3(out, is_source)
 
-        return out
+        if self.kp is not None:
+            kp = self.kp(feat)
+        else:
+            kp = None
+
+        return out, kp, feat

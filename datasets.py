@@ -83,7 +83,7 @@ class SeqRandomSampler(torch.utils.data.Sampler):
     def __init__(self, data_source, num_samples):
         self.data_source = data_source
         self.num_samples = num_samples
-        self.num_repeats = num_samples // len(self.data_source)
+        self.num_repeats = max(1, num_samples // len(self.data_source))
 
     def __iter__(self):
         n = len(self.data_source)

@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 
 from datasets import VideoFeaturesDataset, SeqRandomSampler
 from loss import entropy
@@ -19,8 +19,8 @@ def main(args):
     target_dataset = VideoFeaturesDataset(args.features_folder_target, list_file=args.list_file_target,
                                           num_frames=args.num_frames, sampling_strategy='TSNTrain')
 
-    num_samples = max(len(source_dataset), len(target_dataset))
-
+    num_samples = min(len(source_dataset), len(target_dataset))
+    print (num_samples)
     source_dataset = DataLoader(source_dataset, args.bs, shuffle=False, num_workers=args.num_workers, drop_last=True,
                                 sampler=SeqRandomSampler(source_dataset, num_samples=num_samples))
     target_dataset = DataLoader(target_dataset, args.bs, shuffle=False, num_workers=args.num_workers, drop_last=True,
@@ -68,17 +68,18 @@ def run_epoch(model, source_dataset, target_dataset, optimizer, args):
         x_target = target['frames'].cuda()
 
         # Run a forward pass and compute the score and loss
-        score_source = model(x_source, True)
+        score_source, kp_source, _ = model(x_source, True)
         loss_source = args.cross_entropy_source_weight * criterion(score_source, y_source)
         loss_dict['Cross_entropy'].append(loss_source.data.cpu().numpy())
 
         if args.target_train:
-            score_target = model(x_target, False)
+            score_target, kp_target, _ = model(x_target, False)
             if args.entropy_target_weight != 0:
                 entropy_target = args.entropy_target_weight * entropy(score_target)
                 loss_dict['Entropy'].append(entropy_target.data.cpu().numpy())
             else:
                 entropy_target = 0
+
             loss_target = entropy_target
         else:
             loss_target = 0
@@ -101,7 +102,7 @@ def check_accuracy(model, loader):
             y = x['labels'].cuda().long()
             x = x['frames'].cuda()
 
-            scores = model(x, False)
+            scores, _, _ = model(x, False)
 
             _, preds = torch.max(scores, 1)
             num_correct += torch.sum(preds == y.data)
@@ -130,8 +131,11 @@ if __name__ == "__main__":
     parser.add_argument('--num_frames', type=int, default=10)
 
     parser.add_argument('--cross_entropy_source_weight', type=float, default=1)
-    parser.add_argument('--entropy_target_weight', type=float, default=0.3)
+    parser.add_argument('--entropy_target_weight', type=float, default=0.1)
     #parser.add_argument('--frame_number_task_weight', type=float, default=1)
+
+    #parser.add_argument('--temporal_kp_weight', type=float, default=0)
+    #parser.add_argument('--num_kp', type=int, default=0)
 
 
     parser.add_argument('--bn_last', action='store_true', default=False)
